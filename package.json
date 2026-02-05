@@ -1,0 +1,9 @@
+{
+  "name": "nostr-order-bridge",
+  "version": "0.1.0",
+  "description": "Web bridge for Nostr marketplace orders via BTCPay Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
