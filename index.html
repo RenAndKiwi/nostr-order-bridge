@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bitcoin Butlers - Nostr Order Bridge</title>
+  <title>Bitcoin Butlers - Nostr Bridge</title>
   <style>
     :root {
       --bg: #0d1117;
@@ -16,9 +16,7 @@
       --success: #3fb950;
       --error: #f85149;
     }
-    
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background: var(--bg);
@@ -26,28 +24,10 @@
       min-height: 100vh;
       padding: 2rem;
     }
-    
-    .container {
-      max-width: 600px;
-      margin: 0 auto;
-    }
-    
-    header {
-      text-align: center;
-      margin-bottom: 2rem;
-    }
-    
-    h1 {
-      color: var(--accent);
-      font-size: 1.8rem;
-      margin-bottom: 0.5rem;
-    }
-    
-    .subtitle {
-      color: var(--text-muted);
-      font-size: 0.95rem;
-    }
-    
+    .container { max-width: 620px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 2rem; }
+    h1 { color: var(--accent); font-size: 1.8rem; margin-bottom: 0.5rem; }
+    .subtitle { color: var(--text-muted); font-size: 0.95rem; }
     .card {
       background: var(--card);
       border: 1px solid var(--border);
@@ -55,25 +35,10 @@
       padding: 1.5rem;
       margin-bottom: 1.5rem;
     }
-    
-    .card h2 {
-      font-size: 1.1rem;
-      margin-bottom: 1rem;
-      color: var(--text);
-    }
-    
-    .form-group {
-      margin-bottom: 1rem;
-    }
-    
-    label {
-      display: block;
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      margin-bottom: 0.4rem;
-    }
-    
-    input, select, textarea {
+    .card h2 { font-size: 1.1rem; margin-bottom: 1rem; }
+    .form-group { margin-bottom: 1rem; }
+    label { display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.4rem; }
+    input, textarea {
       width: 100%;
       padding: 0.75rem;
       background: var(--bg);
@@ -82,24 +47,8 @@
       color: var(--text);
       font-size: 1rem;
     }
-    
-    input:focus, select:focus, textarea:focus {
-      outline: none;
-      border-color: var(--accent);
-    }
-    
-    .row {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-    }
-    
-    .row-3 {
-      display: grid;
-      grid-template-columns: 2fr 1fr 1fr;
-      gap: 1rem;
-    }
-    
+    input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+    .info { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.3rem; }
     button {
       width: 100%;
       padding: 1rem;
@@ -110,308 +59,179 @@
       font-size: 1rem;
       font-weight: 600;
       cursor: pointer;
-      transition: background 0.2s;
     }
-    
-    button:hover:not(:disabled) {
-      background: var(--accent-hover);
-    }
-    
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    
-    .status {
-      text-align: center;
-      padding: 1rem;
-      border-radius: 8px;
-      margin-top: 1rem;
-      display: none;
-    }
-    
+    button:hover:not(:disabled) { background: var(--accent-hover); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .status { text-align: center; padding: 1rem; border-radius: 8px; margin-top: 1rem; display: none; }
     .status.show { display: block; }
-    .status.loading { background: var(--card); color: var(--text); }
+    .status.loading { background: var(--card); }
     .status.success { background: #1a3d1f; color: var(--success); }
     .status.error { background: #3d1a1a; color: var(--error); }
-    
-    .invoice-link {
-      display: block;
-      margin-top: 1rem;
-      padding: 1rem;
-      background: var(--accent);
-      color: #000;
-      text-decoration: none;
-      text-align: center;
-      border-radius: 8px;
-      font-weight: 600;
-    }
-    
-    .invoice-link:hover {
-      background: var(--accent-hover);
-    }
-    
-    .info {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      margin-top: 0.5rem;
-    }
-    
-    .products-list {
-      display: flex;
-      flex-direction: column;
-      gap: 0.5rem;
-    }
-    
-    .product-item {
-      display: flex;
-      align-items: center;
-      padding: 0.75rem;
+    .result-box {
       background: var(--bg);
       border: 1px solid var(--border);
       border-radius: 6px;
-      cursor: pointer;
-      transition: border-color 0.2s;
+      padding: 1rem;
+      margin-top: 1rem;
+      font-family: monospace;
+      font-size: 0.9rem;
+      word-break: break-all;
     }
-    
-    .product-item:hover {
-      border-color: var(--accent);
-    }
-    
-    .product-item.selected {
-      border-color: var(--accent);
-      background: rgba(247, 147, 26, 0.1);
-    }
-    
-    .product-item input[type="radio"] {
+    .result-box .label { color: var(--text-muted); font-size: 0.8rem; margin-bottom: 0.3rem; }
+    .result-box .value { color: var(--accent); margin-bottom: 0.8rem; }
+    .result-box .value:last-child { margin-bottom: 0; }
+    .copy-btn {
+      display: inline-block;
       width: auto;
-      margin-right: 0.75rem;
+      padding: 0.3rem 0.6rem;
+      font-size: 0.8rem;
+      background: var(--border);
+      color: var(--text);
+      border-radius: 4px;
+      cursor: pointer;
+      margin-left: 0.5rem;
     }
-    
-    .product-info {
-      flex: 1;
-    }
-    
-    .product-name {
-      font-weight: 500;
-    }
-    
-    .product-price {
-      color: var(--accent);
-      font-weight: 600;
-    }
-    
-    footer {
-      text-align: center;
-      margin-top: 2rem;
-      color: var(--text-muted);
+    .copy-btn:hover { background: var(--text-muted); }
+    .step { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.2rem; }
+    .step-num {
+      background: var(--accent);
+      color: #000;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
       font-size: 0.85rem;
+      flex-shrink: 0;
     }
-    
-    footer a {
-      color: var(--accent);
-      text-decoration: none;
-    }
+    .step-text { flex: 1; }
+    .step-text a { color: var(--accent); }
+    #invite-form, #invalid-invite, #setup-guide { display: none; }
+    footer { text-align: center; margin-top: 2rem; color: var(--text-muted); font-size: 0.85rem; }
+    footer a { color: var(--accent); text-decoration: none; }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
       <h1>₿itcoin Butlers</h1>
-      <p class="subtitle">Nostr Order Bridge — Pay with Lightning ⚡</p>
+      <p class="subtitle">Nostr ↔ WooCommerce Bridge</p>
     </header>
-    
-    <form id="orderForm">
+
+    <!-- Invalid / no invite -->
+    <div id="invalid-invite" class="card">
+      <h2>Invite Required</h2>
+      <p style="color: var(--text-muted)">This bridge is invite-only. You need a valid invite link from Bitcoin Butlers to register your store.</p>
+      <p style="margin-top: 1rem; color: var(--text-muted)">Contact <a href="https://bitcoinbutlers.com" style="color: var(--accent)">Bitcoin Butlers</a> to get started.</p>
+    </div>
+
+    <!-- Registration form -->
+    <div id="invite-form">
       <div class="card">
-        <h2>1. Select Product</h2>
-        <div class="products-list" id="productsList">
-          <!-- Products loaded dynamically -->
-        </div>
-        <div class="form-group" style="margin-top: 1rem;">
-          <label for="quantity">Quantity</label>
-          <input type="number" id="quantity" min="1" value="1" required>
-        </div>
-      </div>
-      
-      <div class="card">
-        <h2>2. Shipping Details</h2>
-        <div class="form-group">
-          <label for="name">Full Name</label>
-          <input type="text" id="name" required placeholder="Satoshi Nakamoto">
-        </div>
-        <div class="form-group">
-          <label for="street">Street Address</label>
-          <input type="text" id="street" required placeholder="123 Bitcoin Lane">
-        </div>
-        <div class="row-3">
+        <h2>Register Your Store</h2>
+        <p class="info" style="margin-bottom: 1rem;">Connect your WooCommerce store to the Nostr marketplace. Your products become discoverable on any NIP-15 client.</p>
+        
+        <form id="registerForm">
           <div class="form-group">
-            <label for="city">City</label>
-            <input type="text" id="city" required placeholder="Austin">
+            <label for="storeName">Store Name</label>
+            <input type="text" id="storeName" required placeholder="My Bitcoin Shop">
           </div>
+          
           <div class="form-group">
-            <label for="region">State/Region</label>
-            <input type="text" id="region" placeholder="TX">
+            <label for="npub">Your Nostr npub</label>
+            <input type="text" id="npub" required placeholder="npub1...">
+            <p class="info">From your WooCommerce plugin: WooCommerce → Nostr Market → Your Public Key</p>
           </div>
+          
           <div class="form-group">
-            <label for="zip">ZIP/Postal</label>
-            <input type="text" id="zip" required placeholder="78701">
+            <label for="wooUrl">WooCommerce Store URL</label>
+            <input type="url" id="wooUrl" required placeholder="https://your-store.com">
           </div>
-        </div>
-        <div class="form-group">
-          <label for="country">Country</label>
-          <input type="text" id="country" required placeholder="USA">
-        </div>
+          
+          <div class="form-group">
+            <label for="email">Contact Email</label>
+            <input type="email" id="email" required placeholder="you@your-store.com">
+            <p class="info">For bridge status notifications only. Never shared.</p>
+          </div>
+
+          <button type="submit" id="submitBtn">Register Store</button>
+        </form>
+        
+        <div id="status" class="status"></div>
       </div>
-      
-      <div class="card">
-        <h2>3. Contact (for order updates)</h2>
-        <div class="form-group">
-          <label for="contact">Email, Nostr npub, or other contact</label>
-          <input type="text" id="contact" required placeholder="your@email.com or npub1...">
+
+      <!-- Result shown after successful registration -->
+      <div id="setup-guide" class="card">
+        <h2>✅ Store Registered — Final Setup</h2>
+        <p class="info" style="margin-bottom: 1rem;">Copy these values into your WooCommerce plugin settings (Nostr Market → Bridge Settings):</p>
+        
+        <div class="result-box">
+          <div class="label">Webhook URL</div>
+          <div class="value" id="resultWebhookUrl"></div>
+          
+          <div class="label">Webhook Secret</div>
+          <div class="value" id="resultWebhookSecret"></div>
         </div>
-        <div class="form-group">
-          <label for="message">Order Notes (optional)</label>
-          <textarea id="message" rows="2" placeholder="Any special instructions..."></textarea>
-        </div>
+        
+        <p class="info" style="margin-top: 1rem;">Once entered in your plugin, the bridge will start forwarding Nostr orders to your WooCommerce as real orders.</p>
       </div>
-      
-      <button type="submit" id="submitBtn">
-        ⚡ Create Lightning Invoice
-      </button>
-      
-      <div id="status" class="status"></div>
-    </form>
-    
+    </div>
+
     <footer>
-      <p>Powered by <a href="https://bitcoinbutlers.com" target="_blank">Bitcoin Butlers</a> + Nostr</p>
+      <p>Powered by <a href="https://bitcoinbutlers.com">Bitcoin Butlers</a></p>
     </footer>
   </div>
-  
-  <script type="module">
-    // Configuration
-    const MERCHANT_PUBKEY = '6750100bbcf478defd8a9c5e873b2e79d8fc12b30f7d54c9884f1d6c336b33e1';
-    const RELAYS = ['wss://relay.damus.io', 'wss://nos.lol', 'wss://relay.primal.net'];
+
+  <script>
+    // Get invite token from URL
+    const params = new URLSearchParams(window.location.search);
+    const inviteToken = params.get('invite');
     
-    // Products (can be fetched from API later)
-    const PRODUCTS = [
-      { id: 'coldcard-mk4', name: 'Coldcard MK4', price: 157.97, currency: 'USD' },
-      { id: 'coldcard-q', name: 'Coldcard Q', price: 239.97, currency: 'USD' },
-      { id: 'seedsigner', name: 'SeedSigner', price: 65.00, currency: 'USD' },
-      { id: 'blockstream-jade', name: 'Blockstream Jade', price: 64.99, currency: 'USD' },
-      { id: 'seed-plate', name: 'Seed Backup Plate (Steel)', price: 39.00, currency: 'USD' },
-    ];
-    
-    // Render products
-    const productsList = document.getElementById('productsList');
-    PRODUCTS.forEach((p, i) => {
-      const item = document.createElement('label');
-      item.className = 'product-item' + (i === 0 ? ' selected' : '');
-      item.innerHTML = `
-        <input type="radio" name="product" value="${p.id}" ${i === 0 ? 'checked' : ''}>
-        <div class="product-info">
-          <div class="product-name">${p.name}</div>
-        </div>
-        <div class="product-price">$${p.price.toFixed(2)}</div>
-      `;
-      item.querySelector('input').addEventListener('change', () => {
-        document.querySelectorAll('.product-item').forEach(el => el.classList.remove('selected'));
-        item.classList.add('selected');
-      });
-      productsList.appendChild(item);
-    });
-    
-    // Nostr utilities (minimal, no external deps)
-    function bytesToHex(bytes) {
-      return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    if (inviteToken) {
+      document.getElementById('invite-form').style.display = 'block';
+    } else {
+      document.getElementById('invalid-invite').style.display = 'block';
     }
     
-    function hexToBytes(hex) {
-      const bytes = new Uint8Array(hex.length / 2);
-      for (let i = 0; i < hex.length; i += 2) {
-        bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
-      }
-      return bytes;
-    }
-    
-    async function sha256(message) {
-      const msgBuffer = new TextEncoder().encode(message);
-      const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-      return bytesToHex(new Uint8Array(hashBuffer));
-    }
-    
-    // Generate ephemeral keypair for this order
-    async function generateKeypair() {
-      const privateKey = bytesToHex(crypto.getRandomValues(new Uint8Array(32)));
-      // For signing, we'll use the server-side bridge
-      return { privateKey };
-    }
-    
-    // Form submission
-    const form = document.getElementById('orderForm');
+    const form = document.getElementById('registerForm');
     const status = document.getElementById('status');
     const submitBtn = document.getElementById('submitBtn');
     
-    function showStatus(message, type) {
-      status.textContent = message;
+    function showStatus(msg, type) {
+      status.textContent = msg;
       status.className = 'status show ' + type;
     }
     
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      
-      const selectedProduct = document.querySelector('input[name="product"]:checked');
-      if (!selectedProduct) {
-        showStatus('Please select a product', 'error');
-        return;
-      }
-      
-      const product = PRODUCTS.find(p => p.id === selectedProduct.value);
-      const quantity = parseInt(document.getElementById('quantity').value) || 1;
-      
-      const order = {
-        id: 'order-' + Date.now().toString(36),
-        items: [{
-          product_id: product.id,
-          name: product.name,
-          quantity: quantity,
-          price: product.price,
-          currency: product.currency
-        }],
-        shipping: {
-          name: document.getElementById('name').value.trim(),
-          street: document.getElementById('street').value.trim(),
-          city: document.getElementById('city').value.trim(),
-          region: document.getElementById('region').value.trim(),
-          country: document.getElementById('country').value.trim(),
-          zip: document.getElementById('zip').value.trim()
-        },
-        contact: document.getElementById('contact').value.trim(),
-        message: document.getElementById('message').value.trim()
-      };
-      
       submitBtn.disabled = true;
-      showStatus('Creating order via Nostr...', 'loading');
+      showStatus('Registering store...', 'loading');
       
       try {
-        // Send order to bridge API
-        const response = await fetch('/api/order', {
+        const res = await fetch('/api/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            merchantPubkey: MERCHANT_PUBKEY,
-            order: order
+            invite: inviteToken,
+            storeName: document.getElementById('storeName').value.trim(),
+            npub: document.getElementById('npub').value.trim(),
+            wooUrl: document.getElementById('wooUrl').value.trim(),
+            email: document.getElementById('email').value.trim(),
           })
         });
         
-        const result = await response.json();
+        const data = await res.json();
         
-        if (result.success && result.invoice) {
-          showStatus('Invoice created! Redirecting to payment...', 'success');
-          status.innerHTML += `<a href="${result.invoice.checkoutLink}" class="invoice-link" target="_blank">⚡ Pay ${result.invoice.amount} ${result.invoice.currency}</a>`;
-        } else if (result.success) {
-          showStatus('Order submitted! You will receive payment instructions via your contact method.', 'success');
+        if (data.success) {
+          showStatus('Store registered!', 'success');
+          document.getElementById('resultWebhookUrl').textContent = data.webhookUrl;
+          document.getElementById('resultWebhookSecret').textContent = data.webhookSecret;
+          document.getElementById('setup-guide').style.display = 'block';
+          form.style.display = 'none';
         } else {
-          throw new Error(result.error || 'Failed to create order');
+          throw new Error(data.error || 'Registration failed');
         }
       } catch (err) {
         showStatus('Error: ' + err.message, 'error');

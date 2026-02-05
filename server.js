@@ -1,210 +1,261 @@
 /**
- * Nostr Order Bridge - Server
+ * Nostr Order Bridge - Registration Server
  * 
- * Simple bridge that:
- * 1. Receives orders from the web form
- * 2. Creates BTCPay invoice directly
- * 3. Returns payment link to customer
+ * Invite-only registration for WooCommerce merchants.
+ * Connects their store to the nostr-order-listener.
  */
 
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
-// Config from environment
+// Config
 const PORT = process.env.PORT || 3848;
-const BTCPAY_URL = process.env.BTCPAY_URL || 'https://nostr.bitcoinbutlers.com';
-const BTCPAY_STORE_ID = process.env.BTCPAY_STORE_ID;
-const BTCPAY_API_KEY = process.env.BTCPAY_API_KEY;
+const LISTENER_URL = process.env.LISTENER_URL || 'http://127.0.0.1:3847';
+const LISTENER_TOKEN = process.env.LISTENER_TOKEN || '';
+const INVITES_FILE = process.env.INVITES_FILE || './invites.json';
 
-if (!BTCPAY_STORE_ID || !BTCPAY_API_KEY) {
-  console.error('ERROR: BTCPAY_STORE_ID and BTCPAY_API_KEY are required');
-  process.exit(1);
+// In-memory invite store
+let invites = {};
+
+function loadInvites() {
+  try {
+    if (fs.existsSync(INVITES_FILE)) {
+      invites = JSON.parse(fs.readFileSync(INVITES_FILE, 'utf8'));
+      console.log(`[${ts()}] Loaded ${Object.keys(invites).length} invites`);
+    }
+  } catch (e) {
+    console.error(`[${ts()}] Failed to load invites:`, e.message);
+  }
 }
 
-// Simple static file serving
-const MIME_TYPES = {
+function saveInvites() {
+  try {
+    fs.writeFileSync(INVITES_FILE, JSON.stringify(invites, null, 2));
+  } catch (e) {
+    console.error(`[${ts()}] Failed to save invites:`, e.message);
+  }
+}
+
+function ts() { return new Date().toISOString(); }
+
+// MIME types
+const MIME = {
   '.html': 'text/html',
   '.js': 'application/javascript',
   '.css': 'text/css',
   '.json': 'application/json',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
+  '.zip': 'application/zip',
 };
 
 function serveStatic(res, filePath) {
   const ext = path.extname(filePath);
-  const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-  
   try {
     const data = fs.readFileSync(filePath);
-    res.writeHead(200, { 'Content-Type': contentType });
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream' });
     res.end(data);
   } catch {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Not found' }));
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not found');
   }
 }
 
-// Parse JSON body
 function parseBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', chunk => { body += chunk; });
-    req.on('end', () => {
-      try {
-        resolve(JSON.parse(body));
-      } catch (e) {
-        reject(new Error('Invalid JSON'));
-      }
-    });
+    req.on('data', c => { body += c; if (body.length > 1e6) req.destroy(); });
+    req.on('end', () => { try { resolve(JSON.parse(body)); } catch { reject(new Error('Invalid JSON')); } });
     req.on('error', reject);
   });
 }
 
-// Create BTCPay invoice
-async function createInvoice(order) {
-  const items = order.items || [];
-  let total = 0;
-  let currency = 'USD';
+function jsonResponse(res, status, data) {
+  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(data));
+}
+
+/**
+ * Convert npub to hex
+ */
+function npubToHex(npub) {
+  if (!npub.startsWith('npub1')) return npub; // already hex
   
-  for (const item of items) {
-    total += (item.price || 0) * (item.quantity || 1);
-    currency = item.currency || currency;
+  // Bech32 decode
+  const CHARSET = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+  const data = npub.slice(5); // remove npub1
+  const values = [];
+  for (const c of data) {
+    const v = CHARSET.indexOf(c);
+    if (v === -1) throw new Error('Invalid npub character');
+    values.push(v);
   }
   
-  const invoiceRequest = {
-    amount: total.toString(),
-    currency: currency,
-    metadata: {
-      orderId: order.id,
-      items: items.map(i => ({
-        name: i.name,
-        quantity: i.quantity,
-        price: i.price,
-      })),
-      shipping: order.shipping,
-      contact: order.contact,
-      message: order.message,
-      source: 'nostr-bridge',
-    },
-    checkout: {
-      defaultLanguage: 'en',
-      redirectURL: `${BTCPAY_URL}/order-complete`,
-    },
-    receipt: {
-      enabled: true,
-    },
-  };
+  // Convert 5-bit to 8-bit
+  let acc = 0, bits = 0;
+  const bytes = [];
+  for (const v of values.slice(0, -6)) { // exclude checksum
+    acc = (acc << 5) | v;
+    bits += 5;
+    while (bits >= 8) {
+      bits -= 8;
+      bytes.push((acc >> bits) & 0xff);
+    }
+  }
   
-  const url = `${BTCPAY_URL}/api/v1/stores/${BTCPAY_STORE_ID}/invoices`;
-  
-  console.log(`[${new Date().toISOString()}] Creating BTCPay invoice: ${total} ${currency} for order ${order.id}`);
-  
-  const response = await fetch(url, {
+  return bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Register merchant on the nostr-order-listener
+ */
+async function registerOnListener(pubkeyHex, storeName, webhookUrl, webhookSecret) {
+  const res = await fetch(`${LISTENER_URL}/api/merchants`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `token ${BTCPAY_API_KEY}`,
+      'Authorization': `Bearer ${LISTENER_TOKEN}`,
     },
-    body: JSON.stringify(invoiceRequest),
+    body: JSON.stringify({
+      pubkey: pubkeyHex,
+      name: storeName,
+      webhookUrl: webhookUrl,
+      webhookSecret: webhookSecret,
+    }),
   });
   
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`[${new Date().toISOString()}] BTCPay error: ${response.status} ${errorText}`);
-    throw new Error(`BTCPay error: ${response.status}`);
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Listener registration failed: ${res.status} ${err}`);
   }
   
-  const invoice = await response.json();
-  console.log(`[${new Date().toISOString()}] Invoice created: ${invoice.id} → ${invoice.checkoutLink}`);
-  
-  return invoice;
+  return await res.json();
 }
 
-// Request handler
+// Server
 const server = http.createServer(async (req, res) => {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
   
   const url = new URL(req.url, `http://localhost:${PORT}`);
   
-  // API: Create order
-  if (req.method === 'POST' && url.pathname === '/api/order') {
+  // === Admin: Create invite ===
+  if (req.method === 'POST' && url.pathname === '/api/invites') {
+    const auth = req.headers.authorization;
+    if (!auth || auth !== `Bearer ${LISTENER_TOKEN}`) {
+      return jsonResponse(res, 401, { error: 'Unauthorized' });
+    }
+    
     try {
       const body = await parseBody(req);
-      const order = body.order;
+      const token = crypto.randomBytes(16).toString('hex');
       
-      if (!order || !order.items || order.items.length === 0) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Invalid order: no items' }));
-        return;
-      }
+      invites[token] = {
+        label: body.label || '',
+        createdAt: Date.now(),
+        used: false,
+      };
+      saveInvites();
       
-      if (!order.shipping || !order.shipping.name) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'Invalid order: shipping details required' }));
-        return;
-      }
+      const inviteUrl = `https://nostr.bitcoinbutlers.com?invite=${token}`;
+      console.log(`[${ts()}] Invite created: ${token} (${body.label || 'no label'})`);
       
-      // Create BTCPay invoice
-      const invoice = await createInvoice(order);
-      
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        success: true,
-        invoice: {
-          id: invoice.id,
-          checkoutLink: invoice.checkoutLink,
-          amount: invoice.amount,
-          currency: invoice.currency,
-        },
-      }));
-    } catch (err) {
-      console.error(`[${new Date().toISOString()}] Error:`, err.message);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: err.message }));
+      return jsonResponse(res, 200, { success: true, token, inviteUrl });
+    } catch (e) {
+      return jsonResponse(res, 400, { error: e.message });
     }
-    return;
   }
   
-  // API: Health check
+  // === Admin: List invites ===
+  if (req.method === 'GET' && url.pathname === '/api/invites') {
+    const auth = req.headers.authorization;
+    if (!auth || auth !== `Bearer ${LISTENER_TOKEN}`) {
+      return jsonResponse(res, 401, { error: 'Unauthorized' });
+    }
+    return jsonResponse(res, 200, { invites });
+  }
+  
+  // === Register merchant via invite ===
+  if (req.method === 'POST' && url.pathname === '/api/register') {
+    try {
+      const body = await parseBody(req);
+      
+      // Validate invite
+      if (!body.invite || !invites[body.invite]) {
+        return jsonResponse(res, 403, { error: 'Invalid or expired invite' });
+      }
+      if (invites[body.invite].used) {
+        return jsonResponse(res, 403, { error: 'Invite already used' });
+      }
+      
+      // Validate fields
+      if (!body.npub || !body.wooUrl || !body.storeName) {
+        return jsonResponse(res, 400, { error: 'Missing required fields: npub, wooUrl, storeName' });
+      }
+      
+      // Convert npub to hex
+      let pubkeyHex;
+      try {
+        pubkeyHex = npubToHex(body.npub);
+      } catch (e) {
+        return jsonResponse(res, 400, { error: 'Invalid npub format' });
+      }
+      
+      if (pubkeyHex.length !== 64) {
+        return jsonResponse(res, 400, { error: 'Invalid npub: decoded key is wrong length' });
+      }
+      
+      // Generate webhook secret
+      const webhookSecret = crypto.randomBytes(32).toString('hex');
+      
+      // Build webhook URL (the merchant's WooCommerce endpoint)
+      const wooUrl = body.wooUrl.replace(/\/$/, '');
+      const webhookUrl = `${wooUrl}/wp-json/woo-nostr-market/v1/order-webhook`;
+      
+      // Register on the listener
+      await registerOnListener(pubkeyHex, body.storeName, webhookUrl, webhookSecret);
+      
+      // Mark invite as used
+      invites[body.invite].used = true;
+      invites[body.invite].usedBy = body.storeName;
+      invites[body.invite].usedAt = Date.now();
+      saveInvites();
+      
+      console.log(`[${ts()}] Merchant registered: ${body.storeName} (${pubkeyHex.slice(0,16)}...)`);
+      
+      return jsonResponse(res, 200, {
+        success: true,
+        webhookUrl: webhookUrl,
+        webhookSecret: webhookSecret,
+      });
+      
+    } catch (e) {
+      console.error(`[${ts()}] Registration error:`, e.message);
+      return jsonResponse(res, 500, { error: e.message });
+    }
+  }
+  
+  // === Health ===
   if (req.method === 'GET' && url.pathname === '/api/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok' }));
-    return;
+    return jsonResponse(res, 200, { status: 'ok' });
   }
   
-  // Static files
+  // === Static files ===
   if (req.method === 'GET') {
     let filePath = url.pathname === '/' ? '/index.html' : url.pathname;
     filePath = path.join(__dirname, filePath);
-    
-    // Prevent directory traversal
-    if (!filePath.startsWith(__dirname)) {
-      res.writeHead(403);
-      res.end('Forbidden');
-      return;
-    }
-    
+    if (!filePath.startsWith(__dirname)) { res.writeHead(403); res.end(); return; }
     serveStatic(res, filePath);
     return;
   }
   
-  res.writeHead(404, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ error: 'Not found' }));
+  jsonResponse(res, 404, { error: 'Not found' });
 });
 
+loadInvites();
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`[${new Date().toISOString()}] Nostr Order Bridge running on port ${PORT}`);
-  console.log(`[${new Date().toISOString()}] BTCPay: ${BTCPAY_URL}/api/v1/stores/${BTCPAY_STORE_ID}`);
+  console.log(`[${ts()}] Nostr Bridge running on port ${PORT}`);
+  console.log(`[${ts()}] Listener: ${LISTENER_URL}`);
 });
